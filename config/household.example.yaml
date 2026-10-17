@@ -1,0 +1,82 @@
+# Example household config — FICTIONAL sample data, safe to publish.
+# Copy to config/household.yaml (git-ignored) and replace with your own.
+# Thresholds here are examples, not safety advice.
+
+timezone: America/New_York
+
+# Where weather is checked. Use a public trailhead or park, not your home address.
+home:
+  name: Example Park
+  lat: 38.9897
+  lon: -77.2528
+
+dog_heat_limit_f: 82
+
+gauges:
+  potomac_little_falls:
+    label: Potomac River near Little Falls
+    site_id: USGS-01646500       # find yours at https://waterdata.usgs.gov
+    parameter_code: "00060"       # 00060 = discharge (ft3/s); 00065 = gage height (ft)
+    unit: ft3/s
+    caution_above: 15000
+    no_go_above: 30000
+    max_age_hours: 6
+
+activities:
+  kayak:
+    label: Kayaking
+    min_temp_f: 55
+    max_temp_f: 92
+    max_wind_mph: 12
+    max_precip_pct: 30
+    gauge: potomac_little_falls
+  hike:
+    label: Hike
+    min_temp_f: 25
+    max_temp_f: 88
+    max_wind_mph: 25
+    max_precip_pct: 50
+    with_dog: true
+  run:
+    label: Short run
+    min_temp_f: 20
+    max_temp_f: 85
+    max_wind_mph: 25
+    max_precip_pct: 60
+  dog_walk:
+    label: Dog walk
+    min_temp_f: 15
+    max_temp_f: 90
+    max_wind_mph: 30
+    max_precip_pct: 70
+    with_dog: true
+
+pets:
+  ripley:
+    name: Ripley
+    species: dog
+    care:
+      - { task: heartworm, label: Heartworm chew, every_days: 30 }
+      - { task: flea_tick, label: Flea & tick, every_days: 30 }
+      - { task: nails, label: Nail trim, every_days: 21 }
+  vincent:
+    name: Vincent
+    species: cat
+    care:
+      - { task: flea, label: Topical flea treatment, every_days: 30 }
+      - { task: litter_change, label: Full litter change, every_days: 14 }
+  mothra:
+    name: Mothra
+    species: cat
+    care:
+      - { task: flea, label: Topical flea treatment, every_days: 30 }
+      - { task: brush, label: Brushing, every_days: 3 }
+
+sitter:
+  name: Sample Sitter
+  channel: outbox   # "webhook" posts to the URL in HOMESTEAD_SITTER_WEBHOOK (a secret)
+
+# Policy overrides may only TIGHTEN a tool's tier (read < write < approval).
+# Loosening fails at startup and in CI.
+policy:
+  # log_care: approval

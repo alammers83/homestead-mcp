@@ -1,0 +1,9 @@
+.git
+.github
+.state
+.venv
+**/__pycache__
+config/household.yaml
+infra
+tests
+docs

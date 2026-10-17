@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "homestead-mcp"
+version = "0.1.0"
+description = "A personal household-ops MCP server with tiered tool permissions and human-in-the-loop approvals."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "mcp>=2.2,<3",
+  "PyYAML>=6.0",
+  "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+homestead = "homestead.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/homestead"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101", "E501"]  # asserts ok; line length is the formatter's job
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]

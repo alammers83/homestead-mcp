@@ -1,0 +1,4 @@
+project_id      = "your-gcp-project"
+region          = "us-east4"
+github_repo     = "alammers83/homestead-mcp"
+invoker_members = ["user:you@example.com"]

@@ -1,0 +1,19 @@
+# Your real household config holds personal details. It never goes in git.
+config/household.yaml
+
+# Local state: audit log, approvals, care log, outbox
+.state/
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate*
+infra/terraform/terraform.tfvars
+infra/terraform/.terraform.lock.hcl.bak
