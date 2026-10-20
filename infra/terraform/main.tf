@@ -8,6 +8,13 @@ locals {
     "sts.googleapis.com",
   ]
   labels = { app = "homestead", managed-by = "terraform" }
+
+  # Optional third-party API keys: secret suffix -> env var the app reads.
+  api_keys = {
+    airnow = "HOMESTEAD_AIRNOW_API_KEY"
+    pollen = "HOMESTEAD_POLLEN_API_KEY"
+    tmdb   = "HOMESTEAD_TMDB_TOKEN"
+  }
 }
 
 resource "google_project_service" "apis" {
@@ -92,6 +99,25 @@ resource "google_secret_manager_secret" "sitter_webhook" {
   depends_on = [google_project_service.apis]
 }
 
+# API keys: create a version for each one you use, then list it in var.enabled_api_keys.
+#   printf %s "$KEY" | gcloud secrets versions add homestead-airnow-key --data-file=-
+resource "google_secret_manager_secret" "api_keys" {
+  for_each  = local.api_keys
+  secret_id = "${var.service_name}-${each.key}-key"
+  labels    = local.labels
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_iam_member" "runtime_api_keys" {
+  for_each  = google_secret_manager_secret.api_keys
+  secret_id = each.value.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = google_service_account.runtime.member
+}
+
 resource "google_secret_manager_secret_iam_member" "runtime_config" {
   secret_id = google_secret_manager_secret.household_config.id
   role      = "roles/secretmanager.secretAccessor"
@@ -150,6 +176,19 @@ resource "google_cloud_run_v2_service" "homestead" {
         }
       }
 
+      dynamic "env" {
+        for_each = toset(var.enabled_api_keys)
+        content {
+          name = local.api_keys[env.value]
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.api_keys[env.value].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+
       resources {
         limits = {
           cpu    = "1"
@@ -200,6 +239,7 @@ resource "google_cloud_run_v2_service" "homestead" {
   depends_on = [
     google_project_service.apis,
     google_secret_manager_secret_iam_member.runtime_config,
+    google_secret_manager_secret_iam_member.runtime_api_keys,
     google_storage_bucket_iam_member.runtime_state,
   ]
 }

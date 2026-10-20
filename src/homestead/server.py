@@ -21,12 +21,20 @@ from homestead.approvals import ApprovalQueue
 from homestead.audit import AuditLog
 from homestead.config import HouseholdConfig
 from homestead.http import HttpClient, UpstreamError, UrllibClient
+from homestead.modules.airquality import AirData
+from homestead.modules.garden import GardenTools
+from homestead.modules.homecoming import HomecomingTools
+from homestead.modules.movies import MovieTools
 from homestead.modules.outdoor import OutdoorData, OutdoorTools
 from homestead.modules.pack import PackTools
+from homestead.modules.sitter import SitterTools
+from homestead.modules.supplies import SuppliesTools
+from homestead.modules.tides import TideData
+from homestead.modules.vet import VetTools
 from homestead.policy import PolicyError, Tier, effective_tier
 
 INSTRUCTIONS = """\
-Homestead manages one household: outdoor plans, pets, and home routines.
+Homestead manages one household: outdoor plans, pets, the garden, and a horror watchlist.
 Tools run at one of three permission tiers:
 - READ tools have no side effects.
 - WRITE tools change local records and are audited.
@@ -154,16 +162,54 @@ def build_app(
     server = MCPServer(name="homestead", version=__version__, instructions=INSTRUCTIONS)
     registry = ToolRegistry(server, cfg, audit, approvals)
 
-    outdoor = OutdoorTools(cfg, OutdoorData(http), now)
+    outdoor = OutdoorTools(cfg, OutdoorData(http), now, AirData(http), TideData(http))
     registry.add(outdoor.list_activities, Tier.READ)
     registry.add(outdoor.check_conditions, Tier.READ)
     registry.add(outdoor.river_level, Tier.READ)
+    registry.add(outdoor.air_quality, Tier.READ)
+    registry.add(outdoor.tides, Tier.READ)
+    registry.add(outdoor.daylight, Tier.READ)
+    registry.add(outdoor.suggest_trails, Tier.READ)
 
     pack = PackTools(cfg, state_dir, http, now)
     registry.add(pack.list_pets, Tier.READ)
     registry.add(pack.care_status, Tier.READ)
     registry.add(pack.log_care, Tier.WRITE)
     registry.add(pack.notify_sitter, Tier.APPROVAL)
+
+    vet = VetTools(cfg, state_dir, now)
+    registry.add(vet.vet_status, Tier.READ)
+    registry.add(vet.weight_history, Tier.READ)
+    registry.add(vet.record_vaccine, Tier.WRITE)
+    registry.add(vet.log_vet_visit, Tier.WRITE)
+    registry.add(vet.log_weight, Tier.WRITE)
+
+    supplies = SuppliesTools(cfg, state_dir, now)
+    registry.add(supplies.supplies_status, Tier.READ)
+    registry.add(supplies.record_stock, Tier.WRITE)
+    registry.add(supplies.request_reorder, Tier.APPROVAL)
+
+    homecoming = HomecomingTools(cfg, state_dir, now)
+    registry.add(homecoming.homecoming_plan, Tier.READ)
+    registry.add(homecoming.check_off_homecoming, Tier.WRITE)
+
+    sitter = SitterTools(cfg, pack, vet, supplies, homecoming, now)
+    registry.add(sitter.sitter_packet, Tier.READ)
+    registry.add(sitter.reminders, Tier.READ)
+    registry.add(sitter.send_sitter_packet, Tier.APPROVAL)
+
+    garden = GardenTools(cfg, state_dir, http, now)
+    registry.add(garden.planting_calendar, Tier.READ)
+    registry.add(garden.water_today, Tier.READ)
+    registry.add(garden.log_watering, Tier.WRITE)
+
+    movies = MovieTools(cfg, state_dir, http, now)
+    registry.add(movies.search_movies, Tier.READ)
+    registry.add(movies.horror_picks, Tier.READ)
+    registry.add(movies.watchlist, Tier.READ)
+    registry.add(movies.add_to_watchlist, Tier.WRITE)
+    registry.add(movies.mark_watched, Tier.WRITE)
+    registry.add(movies.remove_from_watchlist, Tier.WRITE)
 
     def list_pending_approvals() -> dict[str, Any]:
         """List requests waiting for a human decision. Read-only; you cannot approve them."""

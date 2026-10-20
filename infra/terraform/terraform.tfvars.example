@@ -2,3 +2,6 @@ project_id      = "your-gcp-project"
 region          = "us-east4"
 github_repo     = "alammers83/homestead-mcp"
 invoker_members = ["user:you@example.com"]
+
+# After adding a secret version for each (see README), list the ones to wire in:
+# enabled_api_keys = ["airnow", "tmdb"]

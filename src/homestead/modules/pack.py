@@ -2,53 +2,78 @@
 
 from __future__ import annotations
 
-import json
 import os
-import threading
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from homestead.config import HouseholdConfig
+from homestead.config import HouseholdConfig, Pet
 from homestead.http import HttpClient
+from homestead.store import JsonlStore
 
 SITTER_WEBHOOK_ENV = "HOMESTEAD_SITTER_WEBHOOK"  # injected from Secret Manager in prod
+
+
+def find_pet(cfg: HouseholdConfig, pet: str) -> Pet:
+    """Look a pet up by key or name, case-insensitively."""
+    key = pet.strip().lower()
+    for p in cfg.pets.values():
+        if key in {p.key.lower(), p.name.lower()}:
+            return p
+    raise ValueError(f"Unknown pet {pet!r}. Options: {[p.name for p in cfg.pets.values()]}")
 
 
 class PackTools:
     def __init__(self, cfg: HouseholdConfig, state_dir: Path, http: HttpClient, now) -> None:
         self.cfg = cfg
-        self.log_path = state_dir / "care_log.jsonl"
-        self.outbox_path = state_dir / "outbox.jsonl"
+        self.log = JsonlStore(state_dir / "care_log.jsonl")
+        self.outbox = JsonlStore(state_dir / "outbox.jsonl")
         self.http = http
         self.now = now
-        self._lock = threading.Lock()
-        state_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------ helpers
 
-    def _entries(self) -> list[dict[str, Any]]:
-        if not self.log_path.exists():
-            return []
-        return [json.loads(x) for x in self.log_path.read_text("utf-8").splitlines() if x.strip()]
-
     def _last_done(self) -> dict[tuple[str, str], datetime]:
         last: dict[tuple[str, str], datetime] = {}
-        for e in self._entries():
+        for e in self.log.entries():
             at = datetime.fromisoformat(e["at"])
             key = (e["pet"], e["task"])
             if key not in last or at > last[key]:
                 last[key] = at
         return last
 
-    def _pet(self, pet: str):
-        key = pet.strip().lower()
+    def _pet(self, pet: str) -> Pet:
+        return find_pet(self.cfg, pet)
+
+    def due_between(self, start: date, end: date) -> list[dict[str, Any]]:
+        """Care tasks falling due from start to end inclusive (for the sitter packet)."""
+        last = self._last_done()
+        tz = self.cfg.tz
+        out = []
         for p in self.cfg.pets.values():
-            if key in {p.key.lower(), p.name.lower()}:
-                return p
-        raise ValueError(
-            f"Unknown pet {pet!r}. Options: {[p.name for p in self.cfg.pets.values()]}"
-        )
+            for c in p.care:
+                done = last.get((p.key, c.key))
+                if done is None:
+                    out.append({"pet": p.name, "task": c.label, "due": "not logged yet; ask"})
+                    continue
+                due = done.astimezone(tz).date() + timedelta(days=c.every_days)
+                due = max(due, start)  # already overdue: it's due on day one
+                while due <= end:
+                    out.append({"pet": p.name, "task": c.label, "due": due.isoformat()})
+                    due += timedelta(days=c.every_days)
+        return sorted(out, key=lambda i: (i["due"], i["pet"]))
+
+    def deliver(self, text: str) -> dict[str, Any]:
+        """Send text to the sitter. Only ever called from approval-tier tools."""
+        payload = {"to": self.cfg.sitter.name, "text": text, "sent_at": self.now().isoformat()}
+        if self.cfg.sitter.channel == "webhook":
+            url = os.environ.get(SITTER_WEBHOOK_ENV)
+            if not url:
+                raise RuntimeError(f"{SITTER_WEBHOOK_ENV} is not set")
+            status = self.http.post_json(url, payload)
+            return {"delivered_via": "webhook", "http_status": status}
+        self.outbox.append(payload)
+        return {"delivered_via": "outbox", "path": str(self.outbox.path)}
 
     # ------------------------------------------------------------------ tools
 
@@ -117,9 +142,7 @@ class PackTools:
         if task not in {c.key for c in p.care}:
             raise ValueError(f"{p.name} has no task {task!r}. Options: {[c.key for c in p.care]}")
         entry = {"pet": p.key, "task": task, "at": self.now().isoformat(), "note": note[:280]}
-        with self._lock, self.log_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry) + "\n")
-        return {"logged": entry}
+        return {"logged": self.log.append(entry)}
 
     def notify_sitter(self, message: str) -> dict[str, Any]:
         """Send a message to the pet sitter. Requires human approval before it is delivered.
@@ -129,17 +152,4 @@ class PackTools:
         """
         if not message.strip():
             raise ValueError("Message is empty")
-        payload = {
-            "to": self.cfg.sitter.name,
-            "text": message.strip()[:1000],
-            "sent_at": self.now().isoformat(),
-        }
-        if self.cfg.sitter.channel == "webhook":
-            url = os.environ.get(SITTER_WEBHOOK_ENV)
-            if not url:
-                raise RuntimeError(f"{SITTER_WEBHOOK_ENV} is not set")
-            status = self.http.post_json(url, payload)
-            return {"delivered_via": "webhook", "http_status": status}
-        with self._lock, self.outbox_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload) + "\n")
-        return {"delivered_via": "outbox", "path": str(self.outbox_path)}
+        return self.deliver(message.strip()[:1000])

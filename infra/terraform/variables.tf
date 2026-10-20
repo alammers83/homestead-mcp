@@ -36,3 +36,14 @@ variable "sitter_webhook_enabled" {
   type        = bool
   default     = false
 }
+
+variable "enabled_api_keys" {
+  description = "API keys to wire into the service from Secret Manager: airnow, pollen, tmdb. Add a secret version before listing one."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for k in var.enabled_api_keys : contains(["airnow", "pollen", "tmdb"], k)])
+    error_message = "enabled_api_keys may contain only airnow, pollen, tmdb."
+  }
+}

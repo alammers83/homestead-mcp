@@ -23,6 +23,36 @@ EXPECTED_TIERS = {
     "notify_sitter": Tier.APPROVAL,
     "list_pending_approvals": Tier.READ,
     "recent_activity": Tier.READ,
+    # outdoor extensions
+    "air_quality": Tier.READ,
+    "tides": Tier.READ,
+    "daylight": Tier.READ,
+    "suggest_trails": Tier.READ,
+    # pets: vet, weight, supplies, homecoming, sitter packet
+    "vet_status": Tier.READ,
+    "weight_history": Tier.READ,
+    "record_vaccine": Tier.WRITE,
+    "log_vet_visit": Tier.WRITE,
+    "log_weight": Tier.WRITE,
+    "supplies_status": Tier.READ,
+    "record_stock": Tier.WRITE,
+    "request_reorder": Tier.APPROVAL,
+    "homecoming_plan": Tier.READ,
+    "check_off_homecoming": Tier.WRITE,
+    "sitter_packet": Tier.READ,
+    "reminders": Tier.READ,
+    "send_sitter_packet": Tier.APPROVAL,
+    # garden
+    "planting_calendar": Tier.READ,
+    "water_today": Tier.READ,
+    "log_watering": Tier.WRITE,
+    # movies
+    "search_movies": Tier.READ,
+    "horror_picks": Tier.READ,
+    "watchlist": Tier.READ,
+    "add_to_watchlist": Tier.WRITE,
+    "mark_watched": Tier.WRITE,
+    "remove_from_watchlist": Tier.WRITE,
 }
 
 
