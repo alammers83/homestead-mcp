@@ -54,6 +54,13 @@ def fold_watchlist(events: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     return items
 
 
+def on_my_services(provider: str, services: tuple[str, ...]) -> bool:
+    """Case-insensitive partial match, so "prime" finds "Amazon Prime Video"
+    and "hbo" finds "HBO Max"."""
+    name = provider.lower()
+    return any(s.strip().lower() in name for s in services if s.strip())
+
+
 def summarize(m: dict[str, Any]) -> dict[str, Any]:
     year = (m.get("release_date") or "")[:4]
     return {
@@ -107,13 +114,13 @@ class MovieTools:
             kind: sorted({p["provider_name"] for p in region.get(kind) or []})
             for kind in ("flatrate", "free", "ads", "rent")
         }
-        mine = set(self.cfg.movies.services)
+        streaming = names["flatrate"] + names["free"] + names["ads"]
         return {
             "stream": names["flatrate"] + names["free"] + names["ads"],
             "rent": names["rent"],
-            "on_your_services": sorted(
-                mine & set(names["flatrate"] + names["free"] + names["ads"])
-            ),
+            "on_your_services": [
+                n for n in streaming if on_my_services(n, self.cfg.movies.services)
+            ],
         }
 
     def _keyword_id(self, subgenre: str) -> int:

@@ -9,7 +9,12 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from helpers import FakeHttp, call, make_app, open_meteo_payload
 from homestead.modules.garden import DayWater, watering_decision
-from homestead.modules.movies import days_until_halloween, decade_range, fold_watchlist
+from homestead.modules.movies import (
+    days_until_halloween,
+    decade_range,
+    fold_watchlist,
+    on_my_services,
+)
 
 TODAY = date(2026, 10, 17)
 TMDB_ENV = {"HOMESTEAD_TMDB_TOKEN": "tmdb-secret"}
@@ -102,6 +107,19 @@ class MoviesPure(unittest.TestCase):
         self.assertEqual(decade_range("'00s"), ("2000-01-01", "2009-12-31"))
         with self.assertRaises(ValueError):
             decade_range("1984")
+
+    def test_short_service_names_match_tmdb_names(self):
+        mine = ("hulu", "netflix", "hbo", "prime", "peacock")
+        for name in [
+            "Hulu",
+            "Netflix basic with Ads",
+            "HBO Max",
+            "Amazon Prime Video",
+            "Peacock Premium",
+        ]:
+            self.assertTrue(on_my_services(name, mine), name)
+        self.assertFalse(on_my_services("Shudder", mine))
+        self.assertFalse(on_my_services("Hulu", ("", " ")))
 
     def test_halloween_countdown(self):
         self.assertEqual(days_until_halloween(TODAY), 14)

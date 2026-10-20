@@ -169,7 +169,7 @@ garden:
 movies:
   region: US
   min_votes: 300
-  services: [Shudder, Netflix]   # as TMDB names them
+  services: [Shudder, Netflix]   # partial names work: "prime" matches "Amazon Prime Video"
 
 # Policy overrides may only TIGHTEN a tool's tier (read < write < approval).
 # Loosening fails at startup and in CI.
