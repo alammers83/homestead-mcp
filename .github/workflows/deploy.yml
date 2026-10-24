@@ -17,8 +17,15 @@ permissions:
 
 jobs:
   deploy:
-    # Only deploy commits that passed CI on main.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Only deploy commits that passed CI after a push to main in this repo. The
+    # `branches: [main]` filter matches the head branch name of any CI run, so without
+    # the event and repository checks a fork PR from the fork's own `main` branch would
+    # pass CI and get deployed with this repo's credentials.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     environment: production
     env:
