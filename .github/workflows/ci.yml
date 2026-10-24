@@ -15,7 +15,7 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13", "3.14"]  # 3.14 is what the Docker image runs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -33,7 +33,7 @@ jobs:
   privacy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Real household config must never be committed
         run: |
           if git ls-files --error-unmatch config/household.yaml 2>/dev/null; then
@@ -46,7 +46,7 @@ jobs:
       run:
         working-directory: infra/terraform
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: hashicorp/setup-terraform@v4
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
@@ -55,5 +55,5 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build -t homestead:ci .
