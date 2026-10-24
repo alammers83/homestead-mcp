@@ -1,4 +1,4 @@
-"""Shared fixtures: a frozen clock, canned NOAA/USGS payloads, and a fake HTTP client."""
+"""Shared fixtures: a frozen clock, canned API payloads, and a fake HTTP client."""
 
 from __future__ import annotations
 
@@ -67,16 +67,142 @@ def usgs_payload(value="9800", time="2026-10-17T11:45:00+00:00"):
     }
 
 
+def tides_payload():
+    return {
+        "predictions": [
+            {"t": "2026-10-17 04:36", "v": "2.912", "type": "H"},
+            {"t": "2026-10-17 11:02", "v": "0.301", "type": "L"},
+            {"t": "2026-10-17 17:10", "v": "3.104", "type": "H"},
+            {"t": "2026-10-17 23:30", "v": "0.402", "type": "L"},
+        ]
+    }
+
+
+def airnow_payload(aqi=42, category=(1, "Good"), date="2026-10-17"):
+    return [
+        {
+            "DateForecast": f"{date} ",
+            "ParameterName": "PM2.5",
+            "AQI": aqi,
+            "Category": {"Number": category[0], "Name": category[1]},
+        }
+    ]
+
+
+def pollen_payload(index=1, day=17):
+    return {
+        "dailyInfo": [
+            {
+                "date": {"year": 2026, "month": 10, "day": day},
+                "pollenTypeInfo": [
+                    {
+                        "code": "WEED",
+                        "displayName": "Weed",
+                        "indexInfo": {"value": index, "category": "Low"},
+                    },
+                    {"code": "TREE", "displayName": "Tree"},  # out of season: no index
+                ],
+            }
+        ]
+    }
+
+
+def open_meteo_payload(rain_mm=None, et0_mm=3.0, tmax=70.0, prob=10):
+    """10 days, 2026-10-09 .. 2026-10-18 (8 past days, today the 17th, tomorrow)."""
+    days = [f"2026-10-{d:02d}" for d in range(9, 19)]
+    rain = rain_mm if rain_mm is not None else [0.0] * 10
+    return {
+        "daily": {
+            "time": days,
+            "precipitation_sum": rain,
+            "et0_fao_evapotranspiration": [et0_mm] * 10,
+            "temperature_2m_max": [tmax] * 10,
+            "precipitation_probability_max": [prob] * 10,
+        }
+    }
+
+
+TMDB_MOVIES = {
+    1091: {
+        "id": 1091,
+        "title": "The Thing",
+        "release_date": "1982-06-25",
+        "vote_average": 8.1,
+        "vote_count": 7000,
+        "overview": "Antarctic shapeshifter.",
+    },
+    948: {
+        "id": 948,
+        "title": "Halloween",
+        "release_date": "1978-10-24",
+        "vote_average": 7.6,
+        "vote_count": 6000,
+        "overview": "The night he came home.",
+    },
+    377: {
+        "id": 377,
+        "title": "A Nightmare on Elm Street",
+        "release_date": "1984-11-09",
+        "vote_average": 7.3,
+        "vote_count": 5000,
+        "overview": "Don't fall asleep.",
+    },
+}
+
+
+def tmdb_route(path: str, params: dict[str, Any] | None) -> Any:
+    if path == "/search/movie":
+        return {"results": [m for m in TMDB_MOVIES.values() if params["query"] in m["title"]]}
+    if path == "/search/keyword":
+        return {"results": [{"id": 12339, "name": "slasher"}]}
+    if path == "/discover/movie":
+        assert params["with_genres"] == 27
+        return {"results": list(TMDB_MOVIES.values()), "total_pages": 1}
+    if path.endswith("/watch/providers"):
+        return {"results": {"US": {"flatrate": [{"provider_name": "Shudder"}]}}}
+    if path.startswith("/movie/"):
+        return TMDB_MOVIES[int(path.split("/")[2])]
+    raise AssertionError(f"unexpected TMDB path {path}")
+
+
 class FakeHttp:
-    def __init__(self, hourly=None, usgs=None, usgs_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        hourly=None,
+        usgs=None,
+        usgs_error: Exception | None = None,
+        airnow=None,
+        pollen=None,
+        open_meteo=None,
+        tides=None,
+    ) -> None:
         self.hourly = hourly or hourly_payload()
         self.usgs = usgs or usgs_payload()
         self.usgs_error = usgs_error
+        self.airnow = airnow if airnow is not None else airnow_payload()
+        self.pollen = pollen or pollen_payload()
+        self.open_meteo = open_meteo or open_meteo_payload()
+        self.tides = tides or tides_payload()
         self.gets: list[str] = []
+        self.headers: list[dict[str, str]] = []
         self.posts: list[tuple[str, dict]] = []
 
-    def get_json(self, url: str, params: dict[str, Any] | None = None) -> Any:
+    def get_json(
+        self, url: str, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None
+    ) -> Any:
         self.gets.append(url)
+        self.headers.append(headers or {})
+        if "api.themoviedb.org" in url:
+            assert headers and headers["Authorization"].startswith("Bearer ")
+            return tmdb_route(url.split("/3", 1)[1], params)
+        if "tidesandcurrents" in url:
+            return self.tides
+        if "airnowapi.org" in url:
+            return self.airnow
+        if "pollen.googleapis.com" in url:
+            return self.pollen
+        if "open-meteo.com" in url:
+            return self.open_meteo
         if "/points/" in url:
             return {
                 "properties": {

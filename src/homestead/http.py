@@ -15,8 +15,18 @@ class UpstreamError(RuntimeError):
     """An external API was unreachable or returned something unusable."""
 
 
+def _safe(url: str) -> str:
+    """Drop the query string: some APIs (AirNow, Google) take their key there."""
+    return url.split("?", 1)[0]
+
+
 class HttpClient(Protocol):
-    def get_json(self, url: str, params: dict[str, Any] | None = None) -> Any: ...
+    def get_json(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any: ...
 
     def post_json(self, url: str, body: dict[str, Any]) -> int: ...
 
@@ -32,11 +42,16 @@ class UrllibClient:
         try:
             return urllib.request.urlopen(req, timeout=self.timeout)  # noqa: S310 (scheme checked)
         except urllib.error.HTTPError as exc:
-            raise UpstreamError(f"{req.full_url} returned HTTP {exc.code}") from exc
+            raise UpstreamError(f"{_safe(req.full_url)} returned HTTP {exc.code}") from None
         except (urllib.error.URLError, TimeoutError) as exc:
-            raise UpstreamError(f"Could not reach {req.full_url}: {exc}") from exc
+            raise UpstreamError(f"Could not reach {_safe(req.full_url)}: {exc.reason}") from None
 
-    def get_json(self, url: str, params: dict[str, Any] | None = None) -> Any:
+    def get_json(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
         if params:
             url = f"{url}?{urllib.parse.urlencode(params)}"
         req = urllib.request.Request(  # noqa: S310
@@ -44,13 +59,14 @@ class UrllibClient:
             headers={
                 "User-Agent": self.user_agent,
                 "Accept": "application/geo+json, application/json",
+                **(headers or {}),
             },
         )
         with self._open(req) as resp:
             try:
                 return json.load(resp)
-            except json.JSONDecodeError as exc:
-                raise UpstreamError(f"{url} returned invalid JSON") from exc
+            except json.JSONDecodeError:
+                raise UpstreamError(f"{_safe(url)} returned invalid JSON") from None
 
     def post_json(self, url: str, body: dict[str, Any]) -> int:
         req = urllib.request.Request(  # noqa: S310

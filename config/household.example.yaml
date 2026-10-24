@@ -11,6 +11,21 @@ home:
   lon: -77.2528
 
 dog_heat_limit_f: 82
+paw_limit_f: 125       # estimated asphalt temperature where paws burn; pavement walks only
+
+# Air quality (EPA AirNow) and pollen (Google Pollen API). Each needs a key in the
+# environment (HOMESTEAD_AIRNOW_API_KEY, HOMESTEAD_POLLEN_API_KEY); without one the
+# check is skipped. These are the defaults.
+air_quality:
+  caution_aqi: 101           # Unhealthy for Sensitive Groups
+  no_go_aqi: 151             # Unhealthy
+  pollen_caution_index: 4    # Universal Pollen Index, 0-5
+
+# NOAA tide predictions. Find stations at https://tidesandcurrents.noaa.gov
+tides:
+  station: "8594900"         # Washington, DC
+  label: Potomac at Washington, DC
+  # current_station: "..."   # optional: a NOAA current prediction station
 
 gauges:
   potomac_little_falls:
@@ -30,6 +45,8 @@ activities:
     max_wind_mph: 12
     max_precip_pct: 30
     gauge: potomac_little_falls
+    daylight_only: true    # ending after sunset is NO_GO
+    show_tides: true
   hike:
     label: Hike
     min_temp_f: 25
@@ -50,18 +67,49 @@ activities:
     max_wind_mph: 30
     max_precip_pct: 70
     with_dog: true
+    surface: pavement      # adds the paw-temperature check
+
+# Your own read on each trail; there's no good free trails API.
+trails:
+  example_woods:
+    name: Example Woods Loop
+    miles: 2.0
+    shade: high              # high | medium | low
+    dogs_allowed: true
+    water: true              # creek access to cool off
+    notes: rooty in places
+  example_river:
+    name: Example River Trail
+    miles: 3.5
+    shade: medium
+    water: true
+  example_meadow:
+    name: Example Meadow Path
+    miles: 1.2
+    shade: low
+    surface: gravel
 
 pets:
   ripley:
     name: Ripley
     species: dog
+    target_weight_lb: [55, 62]
+    feeding: 2 cups AM, 2 cups PM
+    notes: pulls toward squirrels
     care:
       - { task: heartworm, label: Heartworm chew, every_days: 30 }
       - { task: flea_tick, label: Flea & tick, every_days: 30 }
       - { task: nails, label: Nail trim, every_days: 21 }
+  gamera:
+    name: Gamera
+    species: dog
+    feeding: 1.5 cups AM, 1.5 cups PM
+    care:
+      - { task: heartworm, label: Heartworm chew, every_days: 30 }
   vincent:
     name: Vincent
     species: cat
+    feeding: 1/3 can wet food twice a day
     care:
       - { task: flea, label: Topical flea treatment, every_days: 30 }
       - { task: litter_change, label: Full litter change, every_days: 14 }
@@ -75,6 +123,53 @@ pets:
 sitter:
   name: Sample Sitter
   channel: outbox   # "webhook" posts to the URL in HOMESTEAD_SITTER_WEBHOOK (a secret)
+  house_notes: Leashes by the back door. Cats are fed in the laundry room.
+
+vet:
+  name: Example Animal Hospital
+  phone: 555-0100
+  emergency: Example 24h Emergency Vet, 555-0199
+
+# Inventory: estimated from your last count and daily use.
+supplies:
+  dog_food:
+    label: Dog food
+    unit: cups
+    daily_use: 7             # Ripley 4 + Gamera 3
+    low_days: 7
+    pets: [ripley, gamera]
+    reorder_note: 30 lb bag, local pet store
+  cat_food:
+    label: Wet cat food
+    unit: cans
+    daily_use: 1.3
+    pets: [vincent, mothra]
+  heartworm:
+    label: Heartworm chews
+    unit: chews
+    daily_use: 0.067         # one per dog per month
+    low_days: 30
+    pets: [ripley, gamera]
+
+# A new dog coming home: gear checklist and a dated introduction plan.
+homecoming:
+  pet: gamera
+  arrival: 2026-10-24        # leave blank if you don't know yet
+  resident_dogs: [ripley]
+  resident_cats: [vincent, mothra]
+
+garden:
+  last_frost: "04-15"        # average last spring frost, MM-DD
+  first_frost: "10-25"       # average first fall frost
+  weekly_inches: 1.0
+  crops: [tomato, pepper, basil, lettuce, kale, garlic, beans]   # empty = all known crops
+  beds: [front, back]
+
+# Horror watchlist via TMDB. Needs HOMESTEAD_TMDB_TOKEN in the environment.
+movies:
+  region: US
+  min_votes: 300
+  services: [Shudder, Netflix]   # partial names work: "prime" matches "Amazon Prime Video"
 
 # Policy overrides may only TIGHTEN a tool's tier (read < write < approval).
 # Loosening fails at startup and in CI.
