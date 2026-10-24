@@ -5,3 +5,10 @@ invoker_members = ["user:you@example.com"]
 
 # After adding a secret version for each (see README), list the ones to wire in:
 # enabled_api_keys = ["airnow", "tmdb"]
+
+# OAuth, for Claude's web, desktop and phone connectors (see README). Leave unset to
+# keep the service IAM-only.
+# public_url             = "https://homestead-xxxxxxxxxx-uk.a.run.app"
+# google_oauth_client_id = "1234-abc.apps.googleusercontent.com"
+# allowed_emails         = ["you@gmail.com"]
+# enabled_api_keys       = ["google-oauth"]

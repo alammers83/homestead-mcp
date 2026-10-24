@@ -1,7 +1,7 @@
 """`homestead` command line.
 
 homestead serve                   # stdio, for Claude Desktop / Claude Code
-homestead serve --transport http  # streamable HTTP (Cloud Run)
+homestead serve --transport http  # streamable HTTP (Cloud Run); OAuth if HOMESTEAD_PUBLIC_URL is set
 homestead approvals               # list pending requests
 homestead approve <id>            # a human approves and executes a request
 homestead deny <id> [--reason]
@@ -16,13 +16,14 @@ import os
 import sys
 
 from homestead.approvals import ApprovalError
+from homestead.auth import OAuthConfig
 from homestead.config import load_config
 from homestead.server import build_app, state_dir_from_env
 
 
-def _app():
+def _app(oauth: OAuthConfig | None = None):
     cfg_path = os.environ.get("HOMESTEAD_CONFIG", "config/household.yaml")
-    return build_app(load_config(cfg_path), state_dir_from_env())
+    return build_app(load_config(cfg_path), state_dir_from_env(), oauth=oauth)
 
 
 def _print(obj) -> None:
@@ -48,14 +49,24 @@ def main(argv: list[str] | None = None) -> int:
     audit.add_argument("-n", type=int, default=20)
 
     args = parser.parse_args(argv)
-    app = _app()
 
     if args.cmd == "serve":
         if args.transport == "stdio":
-            app.server.run("stdio")
-        else:
-            app.server.run("streamable-http", host=args.host, port=args.port, stateless_http=True)
+            _app().server.run("stdio")
+            return 0
+        oauth = OAuthConfig.from_env(os.environ)
+        if oauth is None:
+            print(
+                "homestead: HOMESTEAD_PUBLIC_URL is not set, so there is no OAuth. "
+                "Only run this way behind something that authenticates (Cloud Run IAM).",
+                file=sys.stderr,
+            )
+        _app(oauth).server.run(
+            "streamable-http", host=args.host, port=args.port, stateless_http=True
+        )
         return 0
+
+    app = _app()
 
     if args.cmd == "approvals":
         _print([vars(r) for r in app.approvals.list("pending")])

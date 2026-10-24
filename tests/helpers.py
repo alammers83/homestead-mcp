@@ -165,6 +165,16 @@ def tmdb_route(path: str, params: dict[str, Any] | None) -> Any:
     raise AssertionError(f"unexpected TMDB path {path}")
 
 
+def fake_jwt(claims: dict) -> str:
+    import base64
+    import json
+
+    def b64(obj) -> str:
+        return base64.urlsafe_b64encode(json.dumps(obj).encode()).decode().rstrip("=")
+
+    return f"{b64({'alg': 'RS256'})}.{b64(claims)}.sig"
+
+
 class FakeHttp:
     def __init__(
         self,
@@ -222,12 +232,20 @@ class FakeHttp:
         self.posts.append((url, body))
         return 200
 
+    google_claims: dict | None = None  # set by OAuth tests: the ID token Google "returns"
 
-def make_app(http: FakeHttp | None = None, clock: Clock | None = None, cfg=None):
+    def post_form(self, url: str, form: dict) -> Any:
+        self.posts.append((url, form))
+        assert url == "https://oauth2.googleapis.com/token"
+        assert form["client_secret"] and form["grant_type"] == "authorization_code"
+        return {"access_token": "g", "id_token": fake_jwt(self.google_claims or {})}
+
+
+def make_app(http: FakeHttp | None = None, clock: Clock | None = None, cfg=None, oauth=None):
     state = Path(tempfile.mkdtemp(prefix="homestead-test-"))
     http = http or FakeHttp()
     clock = clock or Clock()
-    app = build_app(cfg or load_config(EXAMPLE_CONFIG), state, http=http, now=clock)
+    app = build_app(cfg or load_config(EXAMPLE_CONFIG), state, http=http, now=clock, oauth=oauth)
     return app, state, http, clock
 
 
