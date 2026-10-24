@@ -38,12 +38,35 @@ variable "sitter_webhook_enabled" {
 }
 
 variable "enabled_api_keys" {
-  description = "API keys to wire into the service from Secret Manager: airnow, pollen, tmdb. Add a secret version before listing one."
+  description = "API keys to wire into the service from Secret Manager: airnow, pollen, tmdb, google-oauth. Add a secret version before listing one."
   type        = list(string)
   default     = []
 
   validation {
-    condition     = alltrue([for k in var.enabled_api_keys : contains(["airnow", "pollen", "tmdb"], k)])
-    error_message = "enabled_api_keys may contain only airnow, pollen, tmdb."
+    condition     = alltrue([for k in var.enabled_api_keys : contains(["airnow", "pollen", "tmdb", "google-oauth"], k)])
+    error_message = "enabled_api_keys may contain only airnow, pollen, tmdb, google-oauth."
   }
+}
+
+variable "public_url" {
+  description = "The service's https URL (from `terraform output service_url`). Setting it turns on OAuth and opens the service to the internet, with OAuth as the gate. Empty keeps it IAM-only."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.public_url == "" || startswith(var.public_url, "https://")
+    error_message = "public_url must start with https://."
+  }
+}
+
+variable "google_oauth_client_id" {
+  description = "OAuth client ID (Web application) from Google Cloud console > APIs & Services > Credentials."
+  type        = string
+  default     = ""
+}
+
+variable "allowed_emails" {
+  description = "Google accounts allowed to sign in. Everyone else is refused."
+  type        = list(string)
+  default     = []
 }

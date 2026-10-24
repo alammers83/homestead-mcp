@@ -34,6 +34,7 @@ Rules the code enforces, each with tests:
 - **Expected errors reach the model; crashes don't.** Bad input becomes a readable `ToolError` the assistant can correct. Anything unexpected stays server-side.
 - **New tools need a deliberate tier.** A test pins the full tool→tier inventory, so adding a tool forces the decision into code review.
 - **When data is missing, it says so.** If the river gauge or AirNow is unreachable or stale, the verdict degrades to CAUTION rather than a false GO.
+- **OAuth admits one allowlisted Google account.** Clients may only register Claude's callback or a localhost redirect. Codes are single-use and need PKCE. Access tokens last an hour and refresh tokens rotate. Only token hashes are stored, and removing an email cuts off its tokens immediately.
 - **API keys stay out of URLs and logs where possible.** TMDB's token goes in a header. AirNow and Google take keys as query parameters, so HTTP errors drop the query string before the message reaches the model or the audit log.
 
 ## Architecture
@@ -82,7 +83,9 @@ Optional, each with a free key (the feature is skipped without one):
 The pavement temperature is a rule-of-thumb estimate: air temperature plus up to 60°F, scaled by sun height and cloud cover. Trails come from your config, because there's no good free trails API.
 
 **Production shape on GCP** (`infra/terraform`):
-- Cloud Run (gen2), **IAM-gated** with no public invoker, max 1 instance
+- Cloud Run (gen2), max 1 instance. Two ways in:
+  - **IAM-gated** (default): no public invoker; you connect through `gcloud run services proxy`.
+  - **OAuth** (optional, for Claude's web, desktop and phone apps): the server runs its own OAuth authorization server, with sign-in delegated to Google and an email allowlist. See [Connecting Claude's apps](#connecting-claudes-apps-oauth).
 - Household config stored in **Secret Manager** and mounted as a file; it never touches git or the image
 - State (audit log, approvals, care log) on a **versioned, private GCS bucket** mounted into the container
 - Dedicated runtime service account with only bucket and secret access
@@ -96,7 +99,7 @@ The pavement temperature is a rule-of-thumb estimate: air temperature plus up to
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                  # 106 tests, no network needed
+pytest                                  # 127 tests, no network needed
 
 cp config/household.example.yaml config/household.yaml   # git-ignored; make it yours
 export HOMESTEAD_USER_AGENT="homestead-mcp (github.com/alammers83/homestead-mcp)"  # NOAA asks clients to identify themselves
@@ -166,6 +169,39 @@ gcloud run services proxy homestead --region us-east4 --port 8080
 claude mcp add --transport http homestead http://localhost:8080/mcp
 ```
 
+## Connecting Claude's apps (OAuth)
+
+Claude's custom connectors (claude.ai, the desktop app, and the iPhone and Android apps) connect from Anthropic's servers, so they can't use the gcloud proxy. Turning on OAuth lets them in. The service opens to the internet, and every MCP request must carry a token that only your Google account can get.
+
+> **Deploy the OAuth-capable code first.** Without it, step 4 would make the old, unauthenticated server public.
+
+1. **Google OAuth client.** In Google Cloud console → *Google Auth Platform*:
+   - *Branding*: app name "Homestead" and your email.
+   - *Audience*: **External**, publishing status **Testing**, and add your Gmail as a test user. Only test users can sign in, which is a second lock.
+   - *Clients* → *Create client* → **Web application**. Add the authorized redirect URI `https://<your service URL>/oauth/google/callback` (`terraform output oauth_redirect_uri` prints it once `public_url` is set). Copy the client ID and secret.
+2. **Store the client secret.** The `homestead-google-oauth-key` secret exists after any `terraform apply` on this version:
+   ```bash
+   printf %s "$GOOGLE_CLIENT_SECRET" | gcloud secrets versions add homestead-google-oauth-key --data-file=-
+   ```
+3. **Settings** in `terraform.tfvars`:
+   ```hcl
+   public_url             = "https://homestead-xxxxxxxxxx-uk.a.run.app"   # terraform output service_url
+   google_oauth_client_id = "1234-abc.apps.googleusercontent.com"
+   allowed_emails         = ["you@gmail.com"]
+   enabled_api_keys       = ["google-oauth"]   # plus airnow, tmdb, ... if you use them
+   ```
+4. `terraform apply`. The new revision with OAuth settings rolls out first, then the public invoker is added.
+5. **Add the connector.** In claude.ai, go to *Settings → Connectors → Add custom connector*, enter `https://<your service URL>/mcp`, and sign in with Google. It then shows up in the phone app's connectors too.
+6. **Claude Code** connects directly; the proxy isn't needed:
+   ```bash
+   claude mcp add --transport http homestead https://<your service URL>/mcp
+   ```
+   In Claude Desktop, use the claude.ai connector and remove any `mcp-remote` entry from `claude_desktop_config.json`.
+
+To turn it off, clear `public_url` and apply. The public invoker goes away, and the service is IAM-only again.
+
+Approvals still happen only at the CLI, so from your phone you can queue a sitter message or a reorder, but not approve it.
+
 To approve requests made against the cloud deployment, mount the state bucket locally (for example with `gcsfuse`) and point `HOMESTEAD_STATE_DIR` at it.
 
 ## Privacy
@@ -179,7 +215,7 @@ This repo is public, so everything in it is **fictional sample data**. Real deta
 - [x] Horror watchlist module (TMDB) for October
 - [x] Air quality, pollen, tides, daylight, paw-safe pavement, and trail suggestions
 - [x] Vet records, weight, supplies, new-dog homecoming plan, sitter handoff packet
-- [ ] OAuth in front of the HTTP transport for clients that can't use the gcloud proxy
+- [x] OAuth in front of the HTTP transport for clients that can't use the gcloud proxy
 - [ ] Eval suite: scripted conversations checking that the model picks the right tool and relays the request ID for approval-tier tools
 
 ## Project layout
@@ -190,6 +226,7 @@ src/homestead/
   server.py        ToolRegistry: every tool goes through tier check + audit
   approvals.py     approval queue (create from MCP; decide from CLI only)
   audit.py         append-only JSONL with redaction
+  auth.py          OAuth server for the HTTP transport, Google sign-in, email allowlist
   config.py        typed, validated YAML config
   store.py         append-only JSONL records in the state directory
   dates.py         "today" / "tomorrow" / YYYY-MM-DD parsing

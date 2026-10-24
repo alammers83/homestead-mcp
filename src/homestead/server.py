@@ -19,6 +19,7 @@ from mcp.types import ToolAnnotations
 from homestead import __version__
 from homestead.approvals import ApprovalQueue
 from homestead.audit import AuditLog
+from homestead.auth import CALLBACK_PATH, GoogleOAuthProvider, OAuthConfig
 from homestead.config import HouseholdConfig
 from homestead.http import HttpClient, UpstreamError, UrllibClient
 from homestead.modules.airquality import AirData
@@ -147,6 +148,7 @@ def build_app(
     state_dir: Path,
     http: HttpClient | None = None,
     now: Callable[[], datetime] | None = None,
+    oauth: OAuthConfig | None = None,
 ) -> App:
     now = now or (lambda: datetime.now(UTC))
     # NOAA asks API users to identify themselves; set this to your repo URL or email.
@@ -159,7 +161,17 @@ def build_app(
     audit = AuditLog(state_dir / "audit.jsonl", now=now)
     approvals = ApprovalQueue(state_dir / "approvals", now=now)
 
-    server = MCPServer(name="homestead", version=__version__, instructions=INSTRUCTIONS)
+    provider = GoogleOAuthProvider(oauth, state_dir, http, audit, now) if oauth else None
+    server = MCPServer(
+        name="homestead",
+        version=__version__,
+        instructions=INSTRUCTIONS,
+        auth_server_provider=provider,
+        auth=oauth.auth_settings() if oauth else None,
+    )
+    if provider:
+        # Google sends the browser back here; it's public by design (see auth.py).
+        server.custom_route(CALLBACK_PATH, methods=["GET"])(provider.google_callback)
     registry = ToolRegistry(server, cfg, audit, approvals)
 
     outdoor = OutdoorTools(cfg, OutdoorData(http), now, AirData(http), TideData(http))

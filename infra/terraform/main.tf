@@ -14,7 +14,16 @@ locals {
     airnow = "HOMESTEAD_AIRNOW_API_KEY"
     pollen = "HOMESTEAD_POLLEN_API_KEY"
     tmdb   = "HOMESTEAD_TMDB_TOKEN"
+    # Google OAuth client secret; required when public_url is set.
+    google-oauth = "HOMESTEAD_GOOGLE_CLIENT_SECRET"
   }
+
+  oauth_enabled = var.public_url != ""
+  oauth_env = local.oauth_enabled ? {
+    HOMESTEAD_PUBLIC_URL       = trimsuffix(var.public_url, "/")
+    HOMESTEAD_GOOGLE_CLIENT_ID = var.google_oauth_client_id
+    HOMESTEAD_ALLOWED_EMAILS   = join(",", var.allowed_emails)
+  } : {}
 }
 
 resource "google_project_service" "apis" {
@@ -135,8 +144,10 @@ resource "google_secret_manager_secret_iam_member" "runtime_webhook" {
 resource "google_cloud_run_v2_service" "homestead" {
   name     = var.service_name
   location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL" # reachable, but IAM-gated: no allUsers invoker anywhere
-  labels   = local.labels
+  # Without public_url: reachable, but IAM-gated (no allUsers invoker).
+  # With public_url: open to the internet, and the app's OAuth is the gate (see src/homestead/auth.py).
+  ingress = "INGRESS_TRAFFIC_ALL"
+  labels  = local.labels
 
   template {
     service_account       = google_service_account.runtime.email
@@ -173,6 +184,14 @@ resource "google_cloud_run_v2_service" "homestead" {
               version = "latest"
             }
           }
+        }
+      }
+
+      dynamic "env" {
+        for_each = local.oauth_env
+        content {
+          name  = env.key
+          value = env.value
         }
       }
 
@@ -228,9 +247,19 @@ resource "google_cloud_run_v2_service" "homestead" {
   }
 
   lifecycle {
+    precondition {
+      condition = !local.oauth_enabled || (
+        var.google_oauth_client_id != "" &&
+        length(var.allowed_emails) > 0 &&
+        contains(var.enabled_api_keys, "google-oauth")
+      )
+      error_message = "public_url turns on OAuth: also set google_oauth_client_id and allowed_emails, and add \"google-oauth\" to enabled_api_keys."
+    }
     # CI owns the running image; Terraform owns everything else.
     ignore_changes = [
       template[0].containers[0].image,
+      template[0].labels, # the deploy action stamps commit-sha and managed-by
+      labels["managed-by"],
       client,
       client_version,
     ]
@@ -242,6 +271,17 @@ resource "google_cloud_run_v2_service" "homestead" {
     google_secret_manager_secret_iam_member.runtime_api_keys,
     google_storage_bucket_iam_member.runtime_state,
   ]
+}
+
+# Only with OAuth on: Claude's servers (web, desktop, phone connectors) can't present
+# a Google IAM identity, so the service must accept unauthenticated requests and the
+# app's OAuth check becomes the gate. Every MCP request still needs a valid token.
+resource "google_cloud_run_v2_service_iam_member" "public" {
+  count    = local.oauth_enabled ? 1 : 0
+  name     = google_cloud_run_v2_service.homestead.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 resource "google_cloud_run_v2_service_iam_member" "invokers" {

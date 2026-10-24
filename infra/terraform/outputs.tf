@@ -16,3 +16,8 @@ output "deployer_service_account" {
   description = "Set as GitHub variable DEPLOYER_SA."
   value       = google_service_account.deployer.email
 }
+
+output "oauth_redirect_uri" {
+  description = "Add this as an authorized redirect URI on the Google OAuth client."
+  value       = var.public_url == "" ? null : "${trimsuffix(var.public_url, "/")}/oauth/google/callback"
+}

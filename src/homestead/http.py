@@ -30,6 +30,8 @@ class HttpClient(Protocol):
 
     def post_json(self, url: str, body: dict[str, Any]) -> int: ...
 
+    def post_form(self, url: str, form: dict[str, str]) -> Any: ...
+
 
 class UrllibClient:
     def __init__(self, user_agent: str = DEFAULT_USER_AGENT, timeout: float = 10.0) -> None:
@@ -77,3 +79,21 @@ class UrllibClient:
         )
         with self._open(req) as resp:
             return resp.status
+
+    def post_form(self, url: str, form: dict[str, str]) -> Any:
+        """POST application/x-www-form-urlencoded and parse a JSON reply (OAuth token endpoints)."""
+        req = urllib.request.Request(  # noqa: S310
+            url,
+            data=urllib.parse.urlencode(form).encode(),
+            method="POST",
+            headers={
+                "User-Agent": self.user_agent,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+            },
+        )
+        with self._open(req) as resp:
+            try:
+                return json.load(resp)
+            except json.JSONDecodeError:
+                raise UpstreamError(f"{_safe(url)} returned invalid JSON") from None
